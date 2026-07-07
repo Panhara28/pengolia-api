@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ project.name }} - Security Assessment Report</title>
+<style>
+  body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1a1a1a; margin: 2rem; }
+  h1 { color: #0f172a; }
+  h2 { color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px; margin-top: 2rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; font-size: 0.9rem; }
+  th { background: #f1f5f9; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; color: #fff; }
+  .critical { background: #991b1b; }
+  .high { background: #dc2626; }
+  .medium { background: #d97706; }
+  .low { background: #2563eb; }
+  .informational { background: #64748b; }
+  .finding { border: 1px solid #e2e8f0; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+  .safety-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 1rem; }
+</style>
+</head>
+<body>
+  <h1>Security Assessment Report</h1>
+  <p><strong>Project:</strong> {{ project.name }}<br>
+     <strong>Target:</strong> {{ project.target_url }}<br>
+     <strong>Environment:</strong> {{ project.environment.value }}<br>
+     <strong>Generated:</strong> {{ generated_at }}</p>
+
+  <h2>Executive Summary</h2>
+  <p>{{ executive_summary }}</p>
+  <p><strong>Overall Risk Score:</strong> {{ risk_score }} / 100 &mdash; <strong>{{ risk_level }}</strong></p>
+  <p><strong>Total Findings:</strong> {{ total_findings }}</p>
+
+  <h2>Target Information</h2>
+  <table>
+    <tr><th>Target URL</th><td>{{ project.target_url }}</td></tr>
+    <tr><th>Environment</th><td>{{ project.environment.value }}</td></tr>
+    <tr><th>Scan Type</th><td>{{ scan.scan_type.value }}</td></tr>
+    <tr><th>Scan Started</th><td>{{ scan.started_at }}</td></tr>
+    <tr><th>Scan Finished</th><td>{{ scan.finished_at }}</td></tr>
+  </table>
+
+  <h2>Scan Methodology</h2>
+  <p>{{ methodology_text }} This scan was scoped to a local, private, QA, or
+     approved staging target only -- no unauthorized or public internet
+     targets were scanned, and no exploit payloads were used.</p>
+
+  <h2>Tools Used</h2>
+  <ul>
+    {% for tool in tools_used %}
+    <li>{{ tool }}</li>
+    {% endfor %}
+  </ul>
+
+  <h2>OWASP Top 10 Mapping</h2>
+  <p>Categories marked <em>out of scope</em> were not selected for this scan and are shown for reference only.</p>
+  <table>
+    <tr><th>Category</th><th>Name</th><th>Findings</th><th>Scope</th></tr>
+    {% for row in owasp_coverage %}
+    <tr>
+      <td>{{ row.code }}</td>
+      <td>{{ row.name }}</td>
+      <td>{{ row.finding_count }}</td>
+      <td>{{ "In scope" if row.in_scope else "Out of scope" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h2>Findings by Severity</h2>
+  <table>
+    <tr><th>Severity</th><th>Count</th></tr>
+    {% for severity, count in findings_by_severity.items() %}
+    <tr><td>{{ severity }}</td><td>{{ count }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <h2>Detailed Findings</h2>
+  {% for item in findings_with_extras %}
+  {% set finding = item.finding %}
+  <div class="finding">
+    <h3>{{ finding.title }} <span class="badge {{ finding.severity.value }}">{{ finding.severity.value }}</span></h3>
+    <p><strong>OWASP Category:</strong> {{ finding.owasp_category }}<br>
+       <strong>Affected URL:</strong> {{ finding.affected_url }}<br>
+       <strong>Confidence:</strong> {{ finding.confidence.value }}<br>
+       <strong>Status:</strong> {{ finding.status.value.replace('_', ' ') }}<br>
+       <strong>First Seen:</strong> {{ finding.first_seen }} &nbsp; <strong>Last Seen:</strong> {{ finding.last_seen }}</p>
+    <div><strong>Description:</strong> {{ finding.description|safe }}</div>
+    <p><strong>Evidence:</strong> {{ finding.evidence }}</p>
+    <div><strong>Impact:</strong> {{ finding.impact|safe }}</div>
+    <div><strong>Recommendation:</strong> {{ finding.recommendation|safe }}</div>
+    {% if item.references.cweid or item.references.wascid or item.references.urls %}
+    <p><strong>References:</strong>
+      {% if item.references.cweid %}CWE-{{ item.references.cweid }}{% endif %}
+      {% if item.references.wascid %} &nbsp; WASC-{{ item.references.wascid }}{% endif %}
+    </p>
+    {% if item.references.urls %}
+    <ul>
+      {% for url in item.references.urls %}
+      <li><a href="{{ url }}">{{ url }}</a></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% endif %}
+    {% if finding.status.value == 'false_positive' and finding.false_positive_reason %}
+    <p><strong>False Positive Reason:</strong> {{ finding.false_positive_reason }}</p>
+    {% endif %}
+    {% if finding.developer_notes %}
+    <p><strong>Developer Notes:</strong> {{ finding.developer_notes }}</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <h2>Remediation Plan</h2>
+  <p>Recommendations below are drawn directly from this scan's findings and grouped by severity,
+     with a suggested remediation window for each tier.</p>
+  {% for tier in remediation_plan %}
+  <div class="finding">
+    <h3>
+      <span class="badge {{ tier.severity }}">{{ tier.severity }}</span>
+      {{ tier.count }} finding(s) &mdash;
+      {% if tier.sla_days %}remediate within {{ tier.sla_days }} day(s){% else %}address at next convenient release{% endif %}
+    </h3>
+    <ul>
+      {% for rec in tier.recommendations %}
+      <li>{{ rec|safe }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+  {% if not remediation_plan %}
+  <p>No findings were identified in this scan, so no remediation is required at this time.</p>
+  {% endif %}
+
+  <h2>Retest Notes</h2>
+  <p>After remediation, re-run the same scan type against this project to confirm
+     findings have been resolved. Findings marked "Fixed" should be verified with
+     a retest before closure.</p>
+
+  <h2>Safety and Scope Statement</h2>
+  <div class="safety-box">
+    <p>This scan was performed only against a target explicitly confirmed as
+       local, private, QA, internal, or approved staging infrastructure, with
+       project scope confirmation and safety confirmation recorded prior to
+       execution. PentestFlow does not perform unauthorized scans of public
+       internet targets.</p>
+  </div>
+</body>
+</html>

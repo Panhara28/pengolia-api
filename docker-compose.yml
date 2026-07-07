@@ -1,0 +1,112 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pentestflow
+      POSTGRES_PASSWORD: pentestflow
+      POSTGRES_DB: pentestflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pentestflow -d pentestflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - scan_outputs:/app/scan_outputs
+      - reports:/app/reports
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Sits between celery_worker and the host Docker socket so the worker
+  # never gets raw root-equivalent socket access. Only container
+  # create/start/wait/logs/remove and image pull are allowed (CONTAINERS,
+  # IMAGES, POST=1); everything else (swarm, services, secrets, configs,
+  # networks, volumes, exec into other containers, builds, host /info,
+  # /events) stays disabled at the proxy's default of 0. Not published to
+  # the host or a public port -- only reachable from other containers on
+  # this compose network.
+  # Caveat: this scopes *which* Docker API endpoints are reachable, not
+  # what arguments are passed to them -- a compromised worker could still
+  # ask for a container with a host bind mount. It substantially shrinks
+  # the blast radius (no swarm/secrets/exec/other-container access) but
+  # isn't a full sandbox; real isolation would mean a dedicated
+  # rootless/gVisor-backed scan runner.
+  docker_socket_proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  celery_worker:
+    build: .
+    restart: unless-stopped
+    command: celery -A app.core.celery_app worker --loglevel=info
+    env_file:
+      - .env
+    environment:
+      # Overrides any DOCKER_HOST in .env -- routes docker-py through the
+      # scoped proxy above instead of a raw socket mount.
+      DOCKER_HOST: tcp://docker_socket_proxy:2375
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      docker_socket_proxy:
+        condition: service_started
+    volumes:
+      - scan_outputs:/app/scan_outputs
+      - reports:/app/reports
+
+  # celery_beat:
+  #   build: .
+  #   restart: unless-stopped
+  #   command: celery -A app.core.celery_app beat --loglevel=info
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+volumes:
+  postgres_data:
+  scan_outputs:
+    name: pentestflow_scan_outputs
+  reports:

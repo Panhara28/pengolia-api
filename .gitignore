@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+scan_outputs/*
+!scan_outputs/.gitkeep
+reports/*
+!reports/.gitkeep
+.DS_Store
